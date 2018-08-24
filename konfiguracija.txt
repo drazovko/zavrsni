@@ -1,0 +1,5 @@
+IPadresa = 
+
+brojPorta = 
+
+relayPosluzitelji = 
