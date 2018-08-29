@@ -1,5 +1,5 @@
-IPadresa = 
+IPadresa = "192.168.1.21"
 
-brojPorta = 
+brojPorta = "12000"
 
-relayPosluzitelji = 
+relayPosluzitelji = "192.168.5.107", "192.168.5.108"
