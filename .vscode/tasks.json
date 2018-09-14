@@ -6,7 +6,7 @@
         {
             "label": "kompajliranje",
             "type": "shell",
-            "command": "g++ -g glupiTest.cpp -lPocoFoundation -lPocoNet",
+            "command": "g++ -g glupiTest.cpp -lPocoFoundation -lPocoNet -lpthread",
             "group": {
                 "kind": "build",
                 "isDefault": true

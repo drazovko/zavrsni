@@ -1,4 +1,4 @@
-IPadresa = "192.168.5.107"
+IPadresa = "0.0.0.0"
 
 brojPorta = "12000"
 
