@@ -451,6 +451,7 @@ int main()
         pokTest = posiljatelj.addr();
         Poco::Net::IPAddress ddd = posiljatelj.host();
         string ss = ddd.toString();
+                                        
         if (prijemnaPoruka.tipPoruke == MSG_STREAM_ADVERTISEMENT) {
             prijemnaPoruka.lokalnaAdresa.tipArdese = prijemnaPoruka.javnaAdresa.tipArdese;
             prijemnaPoruka.lokalnaAdresa.IPAdresa = prijemnaPoruka.javnaAdresa.IPAdresa;
