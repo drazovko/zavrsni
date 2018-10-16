@@ -227,8 +227,8 @@ public:
         SocketAddress saMojaAdresa(citac.DajParametar(IPadresa), citac.DajParametar(port));
         DatagramSocket dsPorukaMaster(saMojaAdresa);
         string3 = inet_ntop(AF_INET, &porukaZaObradu.javnaAdresa.IPAdresa , polje, INET_ADDRSTRLEN);
-        
-        SocketAddress saZaOdgovor(string3, porukaZaObradu.javnaAdresa.port);
+        uint16_t brojPorta = byteOrderMoj.fromNetwork(porukaZaObradu.javnaAdresa.port);
+        SocketAddress saZaOdgovor(string3, brojPorta);
         int n;
         u_char* A;
         switch (porukaZaObradu.tipPoruke)
@@ -357,7 +357,7 @@ void Trosilo(int id){
     while(i<5){
         porukaMajstor.obradaPoruke(cirkularniBafer.Sljedeci());
         
-        cout << "Trosilo " << id << " je dohvatilo poruku" << endl;
+        cout << "Trosilo " << id << " je obradilo poruku" << endl;
         i++;
 
         
@@ -411,6 +411,7 @@ int main()
     uint64_t brojacPunjenja = 1;
     PrijemnaPoruka prijemnaPoruka;
     PrijemnaPoruka* pokPrijemnaPoruka;
+    
     int i = 0;
     while(i<10){
         
@@ -446,20 +447,21 @@ int main()
         pokPrijemnaPoruka = (PrijemnaPoruka*)&poljeZaPrijem[0];
         prijemnaPoruka = *pokPrijemnaPoruka;
         
-        //u prijemnu poruku ubacujem javnu ip adresu
-        const sockaddr* pokTest;
+        /*const sockaddr* pokTest;
         pokTest = posiljatelj.addr();
         Poco::Net::IPAddress ddd = posiljatelj.host();
         string ss = ddd.toString();
-                                        
+        string sss = posiljatelj.host().toString(); */
+
+        //u strukturu prijemnaPoruka ubacujem javnu ip adresu
         if (prijemnaPoruka.tipPoruke == MSG_STREAM_ADVERTISEMENT) {
             prijemnaPoruka.lokalnaAdresa.tipArdese = prijemnaPoruka.javnaAdresa.tipArdese;
             prijemnaPoruka.lokalnaAdresa.IPAdresa = prijemnaPoruka.javnaAdresa.IPAdresa;
             prijemnaPoruka.lokalnaAdresa.port = prijemnaPoruka.javnaAdresa.port;
-            prijemnaPoruka.javnaAdresa.tipArdese = 1;
             
-            //prijemnaPoruka.javnaAdresa.IPAdresa = posiljatelj.addr.
-            prijemnaPoruka.javnaAdresa.port = posiljatelj.port();
+            prijemnaPoruka.javnaAdresa.tipArdese = 1;
+            int n = inet_pton(AF_INET, posiljatelj.host().toString().data(), &prijemnaPoruka.javnaAdresa.IPAdresa);
+            prijemnaPoruka.javnaAdresa.port = byteOrderMoj.toNetwork(posiljatelj.port());
         }
         
         cout << "Punjac je napravio " << brojacPunjenja++ << ".poruku, " << hex
