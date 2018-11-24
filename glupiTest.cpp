@@ -13,6 +13,15 @@
 #include<array>
 #include<Poco/ByteOrder.h>
 #include<map>
+#include<chrono>
+#include "Poco/Timestamp.h"
+#include "Poco/DateTimeFormatter.h"
+#include "Poco/DateTimeFormat.h"
+using namespace std;
+using namespace Poco::Net;
+using Poco::Timestamp;
+using Poco::DateTimeFormatter;
+using Poco::DateTimeFormat;
 
 enum imePoruke {
     MSG_PING = 1,
@@ -34,6 +43,11 @@ enum imePoruke {
     MSG_SHUTTING_DOWN,
     MSG_PLEASE_FORWARD,
     MSG_REGISTER_FORWARDING 
+};
+
+struct VrijemeUpisa{
+    Timestamp vrijemeUpisa;
+    uint64_t identifikatorStrujanja;
 };
 
 template<typename Elem, size_t kapacitet>
@@ -75,15 +89,53 @@ public:
         return rez;
     }
 
+    uint64_t ObrisiNajstarijiAkoJeProsloViseOd(int sekunde){
+        std::unique_lock<decltype(brava)> zasun(brava);
+        daLiJePrazan.wait(zasun, [this](){ return broj != 0; });
+
+        //vadi element iz niza:
+        VrijemeUpisa rez = niz[pocetak];
+        if(rez.vrijemeUpisa.isElapsed(sekunde)){
+            pocetak = ++pocetak % kapacitet;
+            --broj;
+            cout << "Obrisao sam:"
+                 << DateTimeFormatter::format(rez.vrijemeUpisa, DateTimeFormat::SORTABLE_FORMAT)
+                 << ", " << rez.identifikatorStrujanja << endl;
+        } 
+        else
+        {
+            rez.identifikatorStrujanja = 0;
+        }
+        return rez.identifikatorStrujanja;
+    }
+
+    bool NadjiIIdentifikatorStrujanjaStaviNaNulu(uint64_t identStrujanja){
+        bool stavioNaNulu = false;
+        std::unique_lock<decltype(brava)> zasun(brava);
+        if(broj == 0) return stavioNaNulu;
+        else{
+            size_t pozicija = pocetak;
+            size_t brojac = 0;
+            VrijemeUpisa rez;
+            while( broj >= brojac ){
+                rez = niz[pozicija];
+                if(rez.identifikatorStrujanja == identStrujanja){
+                    niz[pozicija].identifikatorStrujanja = 22;
+                    stavioNaNulu = true;
+                    return stavioNaNulu;
+                }
+                pozicija++;
+                brojac++;
+            }
+        }
+        return stavioNaNulu;
+    }
 private:
     //pomoćna funkcija za izračunavanje indeksa kraja niza
     size_t DajKraj(){
         return (pocetak + broj) % kapacitet;
     }
 };
-
-using namespace std;
-using namespace Poco::Net;
 
 struct IdentifikacijaSocketa{
     uint8_t tipArdese;
@@ -98,16 +150,13 @@ struct PrijemnaPoruka{
     IdentifikacijaSocketa lokalnaAdresa;
 };
 
-KruzniSpremnik<PrijemnaPoruka, 100> cirkularniBafer; //gobalni spremnik
+KruzniSpremnik<PrijemnaPoruka, 100> cirkularniBafer; //gobalni spremnik 
+KruzniSpremnik<VrijemeUpisa, 10000> cirkularniSpremnikVremenaUpisa; 
 Poco::ByteOrder byteOrderMoj;
-
-
 
 enum konfParametri {
         IPadresa, port, relayServeri, nekiNoviParametar
 };
-
-
 
 class UcitavanjeKonfiguracije
 {
@@ -180,6 +229,7 @@ public:
 };
 
 map<u_int64_t, string> registracija;
+//multimap<time_t , u_int64_t> vrijemeRegistracije;
 UcitavanjeKonfiguracije citac;
 
 class PorukaMajstor
@@ -195,7 +245,14 @@ private:
         uint32_t javnaIPAdresa;
         uint16_t javniBrojPorta;
     } streamRegistred;
-    
+    struct IdentifierNotUsableStruktura {
+        u_int8_t tipPoruke;
+        u_int64_t identifikatorStrujanja;
+        uint8_t tipJavneAdrese;
+        uint32_t javnaIPAdresa;
+        uint16_t javniBrojPorta;
+    } identifierNotUsable;
+
 public:
     PorukaMajstor() { }
     ~PorukaMajstor() { }
@@ -210,12 +267,23 @@ public:
         streamRegistred.tipPoruke = MSG_STREAM_REGISTERED;
         streamRegistred.identifikatorStrujanja = 
             byteOrderMoj.toNetwork(porukaZaObradu.identifikatorStrujanja);
-        streamRegistred.TTL_u_sekundama = 120;
+        streamRegistred.TTL_u_sekundama = byteOrderMoj.toNetwork(120);
         streamRegistred.tipJavneAdrese = 1;
         streamRegistred.javnaIPAdresa = porukaZaObradu.javnaAdresa.IPAdresa;
         streamRegistred.javniBrojPorta = porukaZaObradu.javnaAdresa.port;
         
         return &streamRegistred;
+    }
+
+    IdentifierNotUsableStruktura* PorukaIdentifierNotUsable(){
+        identifierNotUsable.tipPoruke = MSG_IDENTIFIER_NOT_USABLE;
+        identifierNotUsable.identifikatorStrujanja = 
+            byteOrderMoj.toNetwork(porukaZaObradu.identifikatorStrujanja);
+        identifierNotUsable.tipJavneAdrese = 1;
+        identifierNotUsable.javnaIPAdresa = porukaZaObradu.javnaAdresa.IPAdresa;
+        identifierNotUsable.javniBrojPorta = porukaZaObradu.javnaAdresa.port;
+
+        return &identifierNotUsable;
     }
 
     void obradaPoruke(PrijemnaPoruka poruka){
@@ -231,10 +299,12 @@ public:
         SocketAddress saZaOdgovor(string3, brojPorta);
         int n;
         u_char* A;
+        //auto klica = std::chrono::system_clock::now();
+        
         switch (porukaZaObradu.tipPoruke)
         {
             case imePoruke::MSG_STREAM_ADVERTISEMENT:
-                cout << "MSG_STREAM_ADVERTISEMENT" << endl;
+                cout << "Obrada pristigle porkue MSG_STREAM_ADVERTISEMENT" << endl;
                 porukaZaObradu.identifikatorStrujanja = 
                     byteOrderMoj.fromNetwork(porukaZaObradu.identifikatorStrujanja);
                 
@@ -242,20 +312,64 @@ public:
                 rez = registracija.insert({porukaZaObradu.identifikatorStrujanja,
                      string3});
 
-                if (rez.second) {
+                
+                //vrijemeRegistracije.insert({})
+
+                if (rez.second) {       //identifikacijski broj uspješno dodan u bazu, zapisano vrijeme upisa, poslan odgovor, radi
                     cout << "Identifikacijski broj: " << porukaZaObradu.identifikatorStrujanja
                          << " uspješno dodan u bazu." << endl;
                     
+                    VrijemeUpisa vrijemeUpisa;
+                    vrijemeUpisa.vrijemeUpisa.update();
+                    vrijemeUpisa.identifikatorStrujanja = porukaZaObradu.identifikatorStrujanja;
+                    cirkularniSpremnikVremenaUpisa.Dodaj(vrijemeUpisa);
+                    cout << "Zapisano vrijeme upisa: " << DateTimeFormatter::format(vrijemeUpisa.vrijemeUpisa, DateTimeFormat::SORTABLE_FORMAT) << ", "
+                         << vrijemeUpisa.identifikatorStrujanja << endl;
+                    
                     A = (u_char*)PorukaStreamRegistred();
                     n = dsPorukaMaster.sendTo(A, 1024, saZaOdgovor);
+                    cout << "Posiljatelju poslana poruka MSG_STREAM_REGISTERED" << endl
+                        << "____________________________________________________" << endl;
                 }
-                else
-                {
-                    cout << "Identifikacijski broj: " << porukaZaObradu.identifikatorStrujanja
-                         << " vec postoji u bazi." << endl;
+                else                    
+                {   //identifikacijski broj već postoji u bazi, ažurirano vrijeme upisa, poslan odgovor
+                    if( registracija[porukaZaObradu.identifikatorStrujanja] == string3){
+                        cout << "Identifikacijski broj: " << porukaZaObradu.identifikatorStrujanja
+                             << " vec postoji u bazi." << endl;
+                        
+                        if(cirkularniSpremnikVremenaUpisa.NadjiIIdentifikatorStrujanjaStaviNaNulu
+                            (porukaZaObradu.identifikatorStrujanja) == false){
+                                cout << "Za zadani identifikator nema vremena zapisa!!!" << endl;
+                            };
+
+                        VrijemeUpisa vrijemeUpisa;
+                        vrijemeUpisa.vrijemeUpisa.update();
+                        vrijemeUpisa.identifikatorStrujanja = porukaZaObradu.identifikatorStrujanja;
+                        cirkularniSpremnikVremenaUpisa.Dodaj(vrijemeUpisa);
+                        cout << "Zapisano vrijeme upisa: " 
+                             << DateTimeFormatter::format(vrijemeUpisa.vrijemeUpisa, DateTimeFormat::SORTABLE_FORMAT)
+                             << ", " << vrijemeUpisa.identifikatorStrujanja << endl;
+
+                        
+
+                        A = (u_char*)PorukaStreamRegistred();
+                        n = dsPorukaMaster.sendTo(A, 1024, saZaOdgovor);
+                        cout << "Posiljatelju poslana poruka MSG_STREAM_REGISTERED za vec "
+                             << "prije registrirani zapis i azurirano je vrijeme upisa u bazu" << endl
+                             << "____________________________________________________" << endl; 
+                    } else {    //identifikacijski broj je već u bazi sa drugom IP adresom
+                            //cout << rez.first << "--------------" << endl;
+                            A = (u_char*)PorukaIdentifierNotUsable();
+                            n = dsPorukaMaster.sendTo(A, 1024, saZaOdgovor);
+                            cout << "Posiljatelju poslana poruka MSG_IDENTIFIER_NOT_USABLE" << endl
+                             << "____________________________________________________" << endl;
+                      }   
                 }
-                
-                
+                cout << "\n\tRegistrirani streamovi" << endl;
+                for(const auto& element : registracija){
+                    cout << element.first << "\t" << element.second << endl;
+                }
+                cout << endl;
                 break;
             case imePoruke::MSG_STREAM_REMOVE:
                 cout << "MSG_STREAM_REMOVE" << endl;
@@ -349,29 +463,20 @@ public:
     }
 };
 
-//dretva koja prazni spremnik
-void Trosilo(int id){
-    
+void Trosilo(int id){               //dretva koja prazni spremnik
     PorukaMajstor porukaMajstor;
     int i = 0;
     while(i<5){
         porukaMajstor.obradaPoruke(cirkularniBafer.Sljedeci());
-        
         cout << "Trosilo " << id << " je obradilo poruku" << endl;
-        i++;
-
-        
+        i++;  
     }
-    
-    
 }
-//dretva koja puni spremnik
-void Punjac(int n){
+
+void Punjac(int n){                 //dretva koja puni spremnik
     static uint64_t brojacPunjenja = 1;
-    
     //cirkularniBafer.Dodaj(n);
-    cout << "Punjac je napravio " << brojacPunjenja++
-         << ".poruku" << endl;
+    cout << "Punjac je napravio " << brojacPunjenja++ << ".poruku" << endl;
 }
 
 int main()
@@ -381,6 +486,26 @@ int main()
     Poco::Timespan timeSpanZaPrijem;
     timeSpanZaPrijem.assign(vrijemeCekanjaUSecReceiveFrom, vrijemeCekanjaUMiliSecReceiveFrom);
     u_char poljeZaPrijem[1032];
+
+    auto klica = std::chrono::system_clock::now();
+
+    Timestamp now;
+
+    time_t tm1 = now.epochTime();
+    Timestamp ts12(Timestamp::fromEpochTime(tm1));
+
+    for(int i = 0; i < 100000; ++i);
+    cout << "Prošlo je vrijeme . . ." << endl;
+
+    Timestamp::TimeDiff diff = now.elapsed();
+    
+
+    Timestamp juraStart(now);
+    now.update();
+    auto klica2 = std::chrono::system_clock::now();
+
+    diff = now - juraStart;
+
 
     //1. FAZA INICIJALIZACIJE
         //učitavanje parametara iz konfiguracijske datoteke u objekt citac
@@ -429,10 +554,9 @@ int main()
             cin >> ooo;
         }
         
+        cout << "\n\tPristigla je poruka od posiljatelja " << posiljatelj.toString() << endl;
         
-        cout << "\nPosiljatelj: " << posiljatelj.toString() << endl;
-        
-        cout << "Hex: " << endl;
+        cout << "Ispis poruke po bajtovima u hexu: " << endl;
         for(int i = 1; i<=30; i++){
             cout << i << " ";
         }
@@ -455,6 +579,17 @@ int main()
 
         //u strukturu prijemnaPoruka ubacujem javnu ip adresu
         if (prijemnaPoruka.tipPoruke == MSG_STREAM_ADVERTISEMENT) {
+            cout << "\n\tPrimljena poruka u mreznom obliku: " << endl;
+            cout << "Tip poruke:\t\t" << (int)prijemnaPoruka.tipPoruke << endl;
+            
+            cout << "Identif.strujanja:\t" << prijemnaPoruka.identifikatorStrujanja 
+                << ", hex: " << hex << prijemnaPoruka.identifikatorStrujanja << dec << endl;
+            cout << "Tip lokalne sdrese:\t" << (int)prijemnaPoruka.javnaAdresa.tipArdese << endl;
+            cout << "Lokalna IP adresa:\t" << prijemnaPoruka.javnaAdresa.IPAdresa 
+                << ", hex: " << hex << prijemnaPoruka.javnaAdresa.IPAdresa << dec << endl;
+            cout << "Lokalni broj porta:\t" << prijemnaPoruka.javnaAdresa.port
+                 << ", hex: " << hex << prijemnaPoruka.javnaAdresa.port << dec << endl << endl;
+                 
             prijemnaPoruka.lokalnaAdresa.tipArdese = prijemnaPoruka.javnaAdresa.tipArdese;
             prijemnaPoruka.lokalnaAdresa.IPAdresa = prijemnaPoruka.javnaAdresa.IPAdresa;
             prijemnaPoruka.lokalnaAdresa.port = prijemnaPoruka.javnaAdresa.port;
@@ -464,7 +599,7 @@ int main()
             prijemnaPoruka.javnaAdresa.port = byteOrderMoj.toNetwork(posiljatelj.port());
         }
         
-        cout << "Punjac je napravio " << brojacPunjenja++ << ".poruku, " << hex
+        cout << "Punjac je poslao " << brojacPunjenja++ << ".poruku na obradu, " << hex
              << prijemnaPoruka.identifikatorStrujanja << dec << endl;
 
         cirkularniBafer.Dodaj(prijemnaPoruka);
