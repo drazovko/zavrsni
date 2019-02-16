@@ -45,9 +45,14 @@ enum imePoruke {
     MSG_REGISTER_FORWARDING 
 };
 
-struct VrijemeUpisa{
+class VrijemeUpisa{
+    public:
     Timestamp vrijemeUpisa;
     uint64_t identifikatorStrujanja;
+    void Ispis(){
+        cout << "Vrijeme upisa: " << DateTimeFormatter::format(vrijemeUpisa, DateTimeFormat::SORTABLE_FORMAT)
+             << ", Ident.strujanja: " << identifikatorStrujanja << endl;
+    }
 };
 
 template<typename Elem, size_t kapacitet>
@@ -130,6 +135,25 @@ public:
         }
         return stavioNaNulu;
     }
+    void IspisCirkularnogSpremnika(){
+        std::unique_lock<decltype(brava)> zasun(brava);
+        if(broj == 0) {
+            cout << "\tNema elemenata za ispis" << endl << endl;    
+        }
+        else{
+            VrijemeUpisa rez;
+            size_t pozicija = pocetak;
+            size_t brojac = 0;
+            
+            while( broj > brojac ){
+                rez = niz[pozicija];
+                rez.Ispis();
+                
+                pozicija++;
+                brojac++;
+            }    
+        }
+    }
 private:
     //pomoćna funkcija za izračunavanje indeksa kraja niza
     size_t DajKraj(){
@@ -150,8 +174,8 @@ struct PrijemnaPoruka{
     IdentifikacijaSocketa lokalnaAdresa;
 };
 
-KruzniSpremnik<PrijemnaPoruka, 100> cirkularniBafer; //gobalni spremnik 
-KruzniSpremnik<VrijemeUpisa, 10000> cirkularniSpremnikVremenaUpisa; 
+KruzniSpremnik<PrijemnaPoruka, 100> cirkularniBafer; //gobalni spremnik ulaznih poruka
+KruzniSpremnik<VrijemeUpisa, 10000> cirkularniSpremnikVremenaUpisa; //spremnik vremena upisa sa id.brojem
 Poco::ByteOrder byteOrderMoj;
 
 enum konfParametri {
@@ -229,7 +253,6 @@ public:
 };
 
 map<u_int64_t, string> registracija;
-//multimap<time_t , u_int64_t> vrijemeRegistracije;
 UcitavanjeKonfiguracije citac;
 
 class PorukaMajstor
@@ -299,7 +322,6 @@ public:
         SocketAddress saZaOdgovor(string3, brojPorta);
         int n;
         u_char* A;
-        //auto klica = std::chrono::system_clock::now();
         
         switch (porukaZaObradu.tipPoruke)
         {
@@ -315,7 +337,7 @@ public:
                 
                 //vrijemeRegistracije.insert({})
 
-                if (rez.second) {       //identifikacijski broj uspješno dodan u bazu, zapisano vrijeme upisa, poslan odgovor, radi
+                if (rez.second) {       //identifikacijski broj uspješno dodan u bazu, zapisano vrijeme upisa, poslan odgovor, testirano
                     cout << "Identifikacijski broj: " << porukaZaObradu.identifikatorStrujanja
                          << " uspješno dodan u bazu." << endl;
                     
@@ -337,8 +359,8 @@ public:
                         cout << "Identifikacijski broj: " << porukaZaObradu.identifikatorStrujanja
                              << " vec postoji u bazi." << endl;
                         
-                        if(cirkularniSpremnikVremenaUpisa.NadjiIIdentifikatorStrujanjaStaviNaNulu
-                            (porukaZaObradu.identifikatorStrujanja) == false){
+                        if(cirkularniSpremnikVremenaUpisa.NadjiIIdentifikatorStrujanjaStaviNaNulu   //brisanje zapisa
+                            (porukaZaObradu.identifikatorStrujanja) == false){                      //id.zap. = 22
                                 cout << "Za zadani identifikator nema vremena zapisa!!!" << endl;
                             };
 
@@ -358,18 +380,20 @@ public:
                              << "prije registrirani zapis i azurirano je vrijeme upisa u bazu" << endl
                              << "____________________________________________________" << endl; 
                     } else {    //identifikacijski broj je već u bazi sa drugom IP adresom
-                            //cout << rez.first << "--------------" << endl;
                             A = (u_char*)PorukaIdentifierNotUsable();
                             n = dsPorukaMaster.sendTo(A, 1024, saZaOdgovor);
                             cout << "Posiljatelju poslana poruka MSG_IDENTIFIER_NOT_USABLE" << endl
                              << "____________________________________________________" << endl;
                       }   
                 }
-                cout << "\n\tRegistrirani streamovi" << endl;
+                cout << "\n\tRegistrirani streamovi" << endl;   //ispis registriranih streamova
                 for(const auto& element : registracija){
                     cout << element.first << "\t" << element.second << endl;
                 }
                 cout << endl;
+                cout << "\tVremena upisa" << endl;    //ispis vremena upisa za posjedini stream
+                cirkularniSpremnikVremenaUpisa.IspisCirkularnogSpremnika();
+                cout << "-----------------------------------------------------------" << endl << endl;
                 break;
             case imePoruke::MSG_STREAM_REMOVE:
                 cout << "MSG_STREAM_REMOVE" << endl;
@@ -465,11 +489,11 @@ public:
 
 void Trosilo(int id){               //dretva koja prazni spremnik
     PorukaMajstor porukaMajstor;
-    int i = 0;
-    while(i<5){
-        porukaMajstor.obradaPoruke(cirkularniBafer.Sljedeci());
-        cout << "Trosilo " << id << " je obradilo poruku" << endl;
-        i++;  
+    static int i = 1;
+    while(true){
+    porukaMajstor.obradaPoruke(cirkularniBafer.Sljedeci());
+    cout << "Trosilo " << id << " je obradilo " << i << ". poruku" << endl;
+    i++;  
     }
 }
 
@@ -486,26 +510,6 @@ int main()
     Poco::Timespan timeSpanZaPrijem;
     timeSpanZaPrijem.assign(vrijemeCekanjaUSecReceiveFrom, vrijemeCekanjaUMiliSecReceiveFrom);
     u_char poljeZaPrijem[1032];
-
-    auto klica = std::chrono::system_clock::now();
-
-    Timestamp now;
-
-    time_t tm1 = now.epochTime();
-    Timestamp ts12(Timestamp::fromEpochTime(tm1));
-
-    for(int i = 0; i < 100000; ++i);
-    cout << "Prošlo je vrijeme . . ." << endl;
-
-    Timestamp::TimeDiff diff = now.elapsed();
-    
-
-    Timestamp juraStart(now);
-    now.update();
-    auto klica2 = std::chrono::system_clock::now();
-
-    diff = now - juraStart;
-
 
     //1. FAZA INICIJALIZACIJE
         //učitavanje parametara iz konfiguracijske datoteke u objekt citac
@@ -538,7 +542,7 @@ int main()
     PrijemnaPoruka* pokPrijemnaPoruka;
     
     int i = 0;
-    while(i<10){
+    while(true){
         
         try
         {
@@ -600,7 +604,7 @@ int main()
         }
         
         cout << "Punjac je poslao " << brojacPunjenja++ << ".poruku na obradu, " << hex
-             << prijemnaPoruka.identifikatorStrujanja << dec << endl;
+             << prijemnaPoruka.identifikatorStrujanja << dec << endl << endl;
 
         cirkularniBafer.Dodaj(prijemnaPoruka);
         
