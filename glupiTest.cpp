@@ -45,6 +45,78 @@ enum imePoruke {
     MSG_REGISTER_FORWARDING 
 };
 
+class PrikazPorukeUHexuPoBajtovima
+{
+private:
+    u_char B;
+    int BB;
+    bool ponoviti = true;
+    int i = 1;
+    int j = 0;
+public:
+    PrikazPorukeUHexuPoBajtovima(/* args */) { }
+    ~PrikazPorukeUHexuPoBajtovima() { }
+
+    void PrikaziPorukuPoBajtovima(u_char* A, int brojBajtova){
+        cout << "\nPrikaz poruke po bajtovima u hexu: " << endl;
+        int granica = brojBajtova;
+        if(brojBajtova > 24){
+            granica = 24;        
+        }
+        do
+        {
+            for(; i<=granica; i++){
+                if(i<10){
+                cout << 0;
+                }
+                cout << i << " ";
+            }
+            cout << endl << hex;
+            for(; j<granica; j++){
+                if((int)A[j] < 16) cout << 0;
+                BB = (int)A[j];
+                cout << BB << " ";
+            }
+            cout << endl << endl << dec;
+            if(granica == brojBajtova) ponoviti = false;
+            granica = granica + 24;
+            if(granica > brojBajtova){
+                granica = brojBajtova;
+            }     
+        } while (ponoviti);
+    }
+    void PrikaziPorukuPoBajtovima(const char* A, int brojBajtova){
+        cout << "\nPrikaz poruke po bajtovima u hexu: " << endl;
+        int granica = brojBajtova;
+        if(brojBajtova > 24){
+            granica = 24;        
+        }
+        do
+        {
+            for(; i<=granica; i++){
+                if(i<10){
+                cout << 0;
+                }
+                cout << i << " ";
+            }
+            cout << endl << hex;
+            for(; j<granica; j++){
+                if((int)A[j] < 16) cout << 0;
+                BB = (int)A[j];
+                cout << BB << " ";
+            }
+            cout << endl << endl << dec;
+            if(granica == brojBajtova) ponoviti = false;
+            granica = granica + 24;
+            if(granica > brojBajtova){
+                granica = brojBajtova;
+            }     
+        } while (ponoviti);
+    }
+
+};
+
+
 class VrijemeUpisa{
     public:
     Timestamp vrijemeUpisa;
@@ -189,7 +261,7 @@ private:
     vector<string> sviParametri;
     const string imeUlazneKonfiguracije{"konfiguracija.txt"};
     string onoBitno;
-    vector<string>relayPosluzitelji;
+    //vector<string>relayPosluzitelji;
     
 public:
     UcitavanjeKonfiguracije() {
@@ -202,7 +274,7 @@ public:
      }
     ~UcitavanjeKonfiguracije() { }
     void IspisiSveParametre(){
-        cout << "---Svi-parametri-ucitani-iz-konf.txt-----" << endl;
+        cout << "\t---Parametri učitani iz datoteke konf.txt---" << endl;
         for(const string& red : sviParametri)
             cout << red << endl;
         cout << "-----------------------------------------" << endl;
@@ -253,7 +325,7 @@ public:
 };
 
 map<u_int64_t, string> registracija;
-UcitavanjeKonfiguracije citac;
+
 
 class PorukaMajstor
 {
@@ -315,6 +387,7 @@ public:
         string string3;
         std::pair<std::_Rb_tree_iterator<std::pair<const long unsigned int, 
              std::__cxx11::basic_string<char> > >, bool> rez;
+        UcitavanjeKonfiguracije citac;
         SocketAddress saMojaAdresa(citac.DajParametar(IPadresa), citac.DajParametar(port));
         DatagramSocket dsPorukaMaster(saMojaAdresa);
         string3 = inet_ntop(AF_INET, &porukaZaObradu.javnaAdresa.IPAdresa , polje, INET_ADDRSTRLEN);
@@ -329,7 +402,6 @@ public:
                 cout << "Obrada pristigle porkue MSG_STREAM_ADVERTISEMENT" << endl;
                 porukaZaObradu.identifikatorStrujanja = 
                     byteOrderMoj.fromNetwork(porukaZaObradu.identifikatorStrujanja);
-                
                 
                 rez = registracija.insert({porukaZaObradu.identifikatorStrujanja,
                      string3});
@@ -427,52 +499,97 @@ private:
     size_t pocetak = 0;
     size_t kraj = 0;
     size_t duzinaStringa = 0;
+    size_t tockaZarez = 0;
     size_t dvotocka = 0;
     size_t duzinaIPadrese = 0;
     size_t duzinaPorta = 0;
+    uint8_t tipAdrese;
     string posluziteljIPadresa;
     string posluziteljPort;
+    string posluziteljAdresaIPort;
     string poruka;
     char poljeZaPrijem[1024];
     string stringZaPrijem;
     string popisAktivnihRelayPosluzitelja;
+    
+    struct AktivniPosluziteljPosrednik
+    {
+        uint32_t brojZapisa;
+        uint8_t tipAdrese;
+        union adrese
+        {
+            uint32_t Adr_IPv4;
+            //uint128_t ADR_IPv6;
+            char Adr_HostName[256];
+        };
+        uint16_t brojPorta;
+    };
+    
 public:
-    ProvjeraRelayPosluzitelja(string posluzitelji) : popisPosluzitelja(posluzitelji) {  }
+    ProvjeraRelayPosluzitelja(string posluzitelji) : popisPosluzitelja(posluzitelji) { }
     ~ProvjeraRelayPosluzitelja() { }
 
     void Provjera(DatagramSocket& ds){
         int i = 1;
         popisAktivnihRelayPosluzitelja.clear();
+
+        //SocketAddress mojaV6adresa(AddressFamily::IPv6, "fe80::6263:b078:6571:61bd%wlp16s0", "12000");
+        const int vrijemeCekanjaUSecReceiveFrom = 1;
+        const int vrijemeCekanjaUMiliSecReceiveFrom = 0;
+        Poco::Timespan timeSpanZaPrijem;
+        timeSpanZaPrijem.assign(vrijemeCekanjaUSecReceiveFrom, vrijemeCekanjaUMiliSecReceiveFrom);
+        SocketAddress mojaV6adresa(AddressFamily::IPv6, "::0%wlp16s0", "12000");
+        DatagramSocket dsV6(mojaV6adresa);
+        dsV6.setReceiveTimeout(timeSpanZaPrijem);
+        PorukaMajstor porukaMajstor;
+        poruka = porukaMajstor.Ping();
         do
         {
             // u popisu poslužitelja su svi svi relay polužitelji pa se iz tog popisa 
             // vade ip adrese i portovi za svaki pojedinačno i radi se ping pong i od 
             // kojeg se dobije odziv njegovi podaci se upisuju u listu
+            tipAdrese = stoi(popisPosluzitelja.substr(pocetak, 1).data());
             kraj = popisPosluzitelja.find_first_of(",", pocetak);
             dvotocka = popisPosluzitelja.find_first_of(":", pocetak);
+            tockaZarez = popisPosluzitelja.find_first_of(";", pocetak);
             duzinaStringa = kraj - pocetak;
-            duzinaIPadrese = dvotocka - pocetak;
+            duzinaIPadrese = dvotocka - tockaZarez - 1;
             duzinaPorta = kraj - dvotocka - 1;
-            posluziteljIPadresa.assign(popisPosluzitelja.substr(pocetak, duzinaIPadrese));
-            posluziteljPort.assign(popisPosluzitelja.substr(dvotocka+1, duzinaPorta));
+            //posluziteljIPadresa.assign(popisPosluzitelja.substr(tockaZarez+1, duzinaIPadrese));
+            //posluziteljPort.assign(popisPosluzitelja.substr(dvotocka+1, duzinaPorta));
+            posluziteljAdresaIPort.assign(popisPosluzitelja.substr(tockaZarez+1, duzinaIPadrese+duzinaPorta+1));
             pocetak = kraj + 1;
-            
-            PorukaMajstor porukaMajstor;
-            poruka = porukaMajstor.Ping();
-            SocketAddress socAddrRelayPosluzitelja(posluziteljIPadresa, posluziteljPort);
-            ds.sendTo(poruka.data(), poruka.size(), socAddrRelayPosluzitelja);
-            cout << i++ << ". relay server: " << socAddrRelayPosluzitelja.toString() << endl;
             try
             {
-                int n = ds.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), socAddrRelayPosluzitelja);
+                SocketAddress socAddrRelayPosluzitelja(posluziteljAdresaIPort);
+                cout << i++ << ". relay server: " << socAddrRelayPosluzitelja.toString() << endl;
+                dsV6.sendTo(poruka.data(), poruka.size(), socAddrRelayPosluzitelja);
+                //ds.sendTo(poruka.data(), poruka.size(), socAddrRelayPosluzitelja);
+            }
+            catch(const std::exception& e)
+            {
+                cout << i++ << ". relay server: " << posluziteljAdresaIPort << "\t";
+                std::cerr << e.what() << '\n';
+            }            
+            SocketAddress posiljatelj;
+            int n = 0;
+            try
+            {
+                if ((tipAdrese == 1) || (tipAdrese == 3)) {
+                    n = ds.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), posiljatelj);
+                }else if((tipAdrese == 2)/* || (tipAdrese == 1) || (tipAdrese == 3)*/){
+                    n = dsV6.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), posiljatelj);
+                }else{
+                    cout << "Tip IP adrese je pogrešan" << endl << endl;
+                }
                 stringZaPrijem.assign(poljeZaPrijem);
                 stringZaPrijem.pop_back();
                 if (n == 19 && (stringZaPrijem == "2Ovo je ping poruka")) {
                     if (!popisAktivnihRelayPosluzitelja.empty()) {
                         popisAktivnihRelayPosluzitelja.append(", ");
                     }
-                    popisAktivnihRelayPosluzitelja.append(socAddrRelayPosluzitelja.toString());
-                    cout << "Potvrđen relay server: " << socAddrRelayPosluzitelja.toString() << endl;
+                    popisAktivnihRelayPosluzitelja.append(posiljatelj.toString());
+                    cout << "Potvrđen relay server: " << posiljatelj.toString() << endl;
                 }
             }
             catch(const std::exception& e)
@@ -514,6 +631,7 @@ int main()
     //1. FAZA INICIJALIZACIJE
         //učitavanje parametara iz konfiguracijske datoteke u objekt citac
     
+    UcitavanjeKonfiguracije citac;
     citac.IspisiSveParametre();
         //priprema posluzitelja za komunikaciju
     SocketAddress sa(citac.DajParametar(IPadresa), citac.DajParametar(port));
@@ -561,12 +679,12 @@ int main()
         cout << "\n\tPristigla je poruka od posiljatelja " << posiljatelj.toString() << endl;
         
         cout << "Ispis poruke po bajtovima u hexu: " << endl;
-        for(int i = 1; i<=30; i++){
+        for(int i = 1; i<=28; i++){
             cout << i << " ";
         }
         int BB;
         cout << endl << hex;
-        for(int i = 0; i<30; i++){
+        for(int i = 0; i<28; i++){
             BB = (int)poljeZaPrijem[i];
             cout << BB << " ";
         }
