@@ -45,6 +45,23 @@ enum imePoruke {
     MSG_REGISTER_FORWARDING 
 };
 
+enum konfParametri {
+        IPadresa, port, relayServeri, nekiNoviParametar
+};
+
+struct IdentifikacijaSocketa{
+    uint8_t tipArdese;
+    uint32_t IPAdresa;
+    uint16_t port;
+};
+
+struct PrijemnaPoruka{
+    uint8_t tipPoruke;
+    uint64_t identifikatorStrujanja;
+    IdentifikacijaSocketa javnaAdresa;
+    IdentifikacijaSocketa lokalnaAdresa;
+};
+
 class PrikazPorukeUHexuPoBajtovima
 {
 private:
@@ -233,26 +250,10 @@ private:
     }
 };
 
-struct IdentifikacijaSocketa{
-    uint8_t tipArdese;
-    uint32_t IPAdresa;
-    uint16_t port;
-};
-
-struct PrijemnaPoruka{
-    uint8_t tipPoruke;
-    uint64_t identifikatorStrujanja;
-    IdentifikacijaSocketa javnaAdresa;
-    IdentifikacijaSocketa lokalnaAdresa;
-};
-
 KruzniSpremnik<PrijemnaPoruka, 100> cirkularniBafer; //gobalni spremnik ulaznih poruka
 KruzniSpremnik<VrijemeUpisa, 10000> cirkularniSpremnikVremenaUpisa; //spremnik vremena upisa sa id.brojem
 Poco::ByteOrder byteOrderMoj;
-
-enum konfParametri {
-        IPadresa, port, relayServeri, nekiNoviParametar
-};
+map<u_int64_t, string> registracija;
 
 class UcitavanjeKonfiguracije
 {
@@ -267,7 +268,7 @@ public:
     UcitavanjeKonfiguracije() {
         ifstream tokPremaKonfiguraciji{imeUlazneKonfiguracije};
         while(getline(tokPremaKonfiguraciji, cijeliRed)){
-            if ((!cijeliRed.empty()) && (cijeliRed != "\r")) {
+            if ((!cijeliRed.empty()) && (cijeliRed != "\r") && (cijeliRed[0] != '/' && cijeliRed[1] != '/')) {
                 sviParametri.push_back(cijeliRed);    
             }
         }
@@ -323,9 +324,6 @@ public:
         return onoBitno;
     }
 };
-
-map<u_int64_t, string> registracija;
-
 
 class PorukaMajstor
 {
@@ -400,6 +398,16 @@ public:
         {
             case imePoruke::MSG_STREAM_ADVERTISEMENT:
                 cout << "Obrada pristigle porkue MSG_STREAM_ADVERTISEMENT" << endl;
+                cout << "\n\tPrimljena poruka u mreznom obliku: " << endl;
+                cout << "Tip poruke:\t\t" << (int)porukaZaObradu.tipPoruke << endl;
+                cout << "Identif.strujanja:\t" << porukaZaObradu.identifikatorStrujanja 
+                     << ", hex: " << hex << porukaZaObradu.identifikatorStrujanja << dec << endl;
+                cout << "Tip lokalne sdrese:\t" << (int)porukaZaObradu.javnaAdresa.tipArdese << endl;
+                cout << "Lokalna IP adresa:\t" << porukaZaObradu.javnaAdresa.IPAdresa 
+                     << ", hex: " << hex << porukaZaObradu.javnaAdresa.IPAdresa << dec << ", " << string3 << endl;
+                cout << "Lokalni broj porta:\t" << porukaZaObradu.javnaAdresa.port
+                     << ", hex: " << hex << porukaZaObradu.javnaAdresa.port << dec << endl << endl;
+ 
                 porukaZaObradu.identifikatorStrujanja = 
                     byteOrderMoj.fromNetwork(porukaZaObradu.identifikatorStrujanja);
                 
@@ -491,7 +499,6 @@ public:
 
 };
 
-
 class ProvjeraRelayPosluzitelja
 {
 private:
@@ -532,16 +539,15 @@ public:
     void Provjera(DatagramSocket& ds){
         int i = 1;
         popisAktivnihRelayPosluzitelja.clear();
-
-        //SocketAddress mojaV6adresa(AddressFamily::IPv6, "fe80::6263:b078:6571:61bd%wlp16s0", "12000");
+        
         const int vrijemeCekanjaUSecReceiveFrom = 1;
         const int vrijemeCekanjaUMiliSecReceiveFrom = 0;
         Poco::Timespan timeSpanZaPrijem;
         timeSpanZaPrijem.assign(vrijemeCekanjaUSecReceiveFrom, vrijemeCekanjaUMiliSecReceiveFrom);
-        SocketAddress mojaV6adresa(AddressFamily::IPv6, "::0%wlp16s0", "12000");
+ /*       SocketAddress mojaV6adresa(AddressFamily::IPv6, "::0%wlp16s0", "12000");
         DatagramSocket dsV6(mojaV6adresa);
         dsV6.setReceiveTimeout(timeSpanZaPrijem);
-        PorukaMajstor porukaMajstor;
+*/     PorukaMajstor porukaMajstor;
         poruka = porukaMajstor.Ping();
         do
         {
@@ -563,8 +569,8 @@ public:
             {
                 SocketAddress socAddrRelayPosluzitelja(posluziteljAdresaIPort);
                 cout << i++ << ". relay server: " << socAddrRelayPosluzitelja.toString() << endl;
-                dsV6.sendTo(poruka.data(), poruka.size(), socAddrRelayPosluzitelja);
-                //ds.sendTo(poruka.data(), poruka.size(), socAddrRelayPosluzitelja);
+                //dsV6.sendTo(poruka.data(), poruka.size(), socAddrRelayPosluzitelja);
+                ds.sendTo(poruka.data(), poruka.size(), socAddrRelayPosluzitelja);
             }
             catch(const std::exception& e)
             {
@@ -575,13 +581,15 @@ public:
             int n = 0;
             try
             {
+                n = ds.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), posiljatelj);
+                /*
                 if ((tipAdrese == 1) || (tipAdrese == 3)) {
                     n = ds.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), posiljatelj);
-                }else if((tipAdrese == 2)/* || (tipAdrese == 1) || (tipAdrese == 3)*/){
+                }else if((tipAdrese == 2)/* || (tipAdrese == 1) || (tipAdrese == 3)){
                     n = dsV6.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), posiljatelj);
                 }else{
                     cout << "Tip IP adrese je pogrešan" << endl << endl;
-                }
+                }*/
                 stringZaPrijem.assign(poljeZaPrijem);
                 stringZaPrijem.pop_back();
                 if (n == 19 && (stringZaPrijem == "2Ovo je ping poruka")) {
@@ -660,11 +668,13 @@ int main()
     PrijemnaPoruka* pokPrijemnaPoruka;
     
     int i = 0;
+    int brojPrimljenihBajtova{0};
+    PrikazPorukeUHexuPoBajtovima prikazPorukeUHexuPoBajtovima;
     while(true){
         
         try
         {
-            ds.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), posiljatelj);    
+            brojPrimljenihBajtova = ds.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), posiljatelj);    
         }
         catch(const std::exception& e)
         {
@@ -678,80 +688,33 @@ int main()
         
         cout << "\n\tPristigla je poruka od posiljatelja " << posiljatelj.toString() << endl;
         
-        cout << "Ispis poruke po bajtovima u hexu: " << endl;
-        for(int i = 1; i<=28; i++){
-            cout << i << " ";
-        }
-        int BB;
-        cout << endl << hex;
-        for(int i = 0; i<28; i++){
-            BB = (int)poljeZaPrijem[i];
-            cout << BB << " ";
-        }
-        cout << endl << dec; 
+        prikazPorukeUHexuPoBajtovima.PrikaziPorukuPoBajtovima(poljeZaPrijem, brojPrimljenihBajtova);
         
         pokPrijemnaPoruka = (PrijemnaPoruka*)&poljeZaPrijem[0];
         prijemnaPoruka = *pokPrijemnaPoruka;
         
-        /*const sockaddr* pokTest;
-        pokTest = posiljatelj.addr();
-        Poco::Net::IPAddress ddd = posiljatelj.host();
-        string ss = ddd.toString();
-        string sss = posiljatelj.host().toString(); */
-
         //u strukturu prijemnaPoruka ubacujem javnu ip adresu
-        if (prijemnaPoruka.tipPoruke == MSG_STREAM_ADVERTISEMENT) {
-            cout << "\n\tPrimljena poruka u mreznom obliku: " << endl;
-            cout << "Tip poruke:\t\t" << (int)prijemnaPoruka.tipPoruke << endl;
-            
-            cout << "Identif.strujanja:\t" << prijemnaPoruka.identifikatorStrujanja 
-                << ", hex: " << hex << prijemnaPoruka.identifikatorStrujanja << dec << endl;
-            cout << "Tip lokalne sdrese:\t" << (int)prijemnaPoruka.javnaAdresa.tipArdese << endl;
-            cout << "Lokalna IP adresa:\t" << prijemnaPoruka.javnaAdresa.IPAdresa 
-                << ", hex: " << hex << prijemnaPoruka.javnaAdresa.IPAdresa << dec << endl;
-            cout << "Lokalni broj porta:\t" << prijemnaPoruka.javnaAdresa.port
-                 << ", hex: " << hex << prijemnaPoruka.javnaAdresa.port << dec << endl << endl;
-                 
+/*        if (prijemnaPoruka.tipPoruke == MSG_STREAM_ADVERTISEMENT) {
+                
             prijemnaPoruka.lokalnaAdresa.tipArdese = prijemnaPoruka.javnaAdresa.tipArdese;
             prijemnaPoruka.lokalnaAdresa.IPAdresa = prijemnaPoruka.javnaAdresa.IPAdresa;
             prijemnaPoruka.lokalnaAdresa.port = prijemnaPoruka.javnaAdresa.port;
             
             prijemnaPoruka.javnaAdresa.tipArdese = 1;
             int n = inet_pton(AF_INET, posiljatelj.host().toString().data(), &prijemnaPoruka.javnaAdresa.IPAdresa);
-            prijemnaPoruka.javnaAdresa.port = byteOrderMoj.toNetwork(posiljatelj.port());
+            prijemnaPoruka.javnaAdresa.port = byteOrderMoj.toNetwork(posiljatelj.port()); 
         }
-        
+  */      
         cout << "Punjac je poslao " << brojacPunjenja++ << ".poruku na obradu, " << hex
              << prijemnaPoruka.identifikatorStrujanja << dec << endl << endl;
 
         cirkularniBafer.Dodaj(prijemnaPoruka);
         
-
         i++;
     }
 
     t1.join();
     t2.join();
-    
-
-
-    /*
-    //testiranje
-    SocketAddress saTest("192.168.005.104", 11000);
-    char buffer[1024];
-
-    ds.sendTo(buffer, 1024, saTest);
-    try
-    {
-        ds.receiveFrom(buffer, sizeof(buffer), posiljatelj);
-    }
-    catch(const std::exception& e)
-    {
-        std::cerr << e.what() << '\n';
-    }
-    
-    cout << posiljatelj.toString() << ":" << buffer << endl;
-    */
 
     cout << "\nUnesi znak za kraj programa: ";
     char ooo;
