@@ -60,6 +60,7 @@ struct PrijemnaPoruka{
     uint64_t identifikatorStrujanja;
     IdentifikacijaSocketa javnaAdresa;
     IdentifikacijaSocketa lokalnaAdresa;
+    IdentifikacijaSocketa adresaIzDatagramSocketaSaKojeJeDoslaPoruka;
 };
 
 class PrikazPorukeUHexuPoBajtovima
@@ -692,6 +693,9 @@ int main()
         
         pokPrijemnaPoruka = (PrijemnaPoruka*)&poljeZaPrijem[0];
         prijemnaPoruka = *pokPrijemnaPoruka;
+        //tu rješavam kojeg tipa je adresa, treba dovršiti
+        int a = posiljatelj.af();
+        SocketAddress::Family obitelj = posiljatelj.family();
         
         //u strukturu prijemnaPoruka ubacujem javnu ip adresu
 /*        if (prijemnaPoruka.tipPoruke == MSG_STREAM_ADVERTISEMENT) {
