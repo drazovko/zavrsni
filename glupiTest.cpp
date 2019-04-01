@@ -60,7 +60,14 @@ struct PrijemnaPoruka{
     uint64_t identifikatorStrujanja;
     IdentifikacijaSocketa javnaAdresa;
     IdentifikacijaSocketa lokalnaAdresa;
-    IdentifikacijaSocketa adresaIzDatagramSocketaSaKojeJeDoslaPoruka;
+};
+
+struct PrijemnaPoruka2{
+    uint8_t tipPoruke;
+    uint64_t identifikatorStrujanja;
+    IdentifikacijaSocketa javnaAdresa;
+    IdentifikacijaSocketa lokalnaAdresa;
+    SocketAddress adresaIzDatagramSocketaSaKojeJeDoslaPoruka;
 };
 
 class PrikazPorukeUHexuPoBajtovima
@@ -251,7 +258,7 @@ private:
     }
 };
 
-KruzniSpremnik<PrijemnaPoruka, 100> cirkularniBafer; //gobalni spremnik ulaznih poruka
+KruzniSpremnik<PrijemnaPoruka2, 100> cirkularniBafer; //gobalni spremnik ulaznih poruka
 KruzniSpremnik<VrijemeUpisa, 10000> cirkularniSpremnikVremenaUpisa; //spremnik vremena upisa sa id.brojem
 Poco::ByteOrder byteOrderMoj;
 map<u_int64_t, string> registracija;
@@ -330,7 +337,7 @@ class PorukaMajstor
 {
 private:
     string pingPoruka;
-    PrijemnaPoruka porukaZaObradu;
+    PrijemnaPoruka2 porukaZaObradu;
     struct StreamRegistredStruktura {
         u_int8_t tipPoruke;
         u_int64_t identifikatorStrujanja;
@@ -380,7 +387,7 @@ public:
         return &identifierNotUsable;
     }
 
-    void obradaPoruke(PrijemnaPoruka poruka){
+    void obradaPoruke(PrijemnaPoruka2 poruka){
         porukaZaObradu = poruka;
         char polje[1024];
         string string3;
@@ -391,7 +398,8 @@ public:
         DatagramSocket dsPorukaMaster(saMojaAdresa);
         string3 = inet_ntop(AF_INET, &porukaZaObradu.javnaAdresa.IPAdresa , polje, INET_ADDRSTRLEN);
         uint16_t brojPorta = byteOrderMoj.fromNetwork(porukaZaObradu.javnaAdresa.port);
-        SocketAddress saZaOdgovor(string3, brojPorta);
+//        SocketAddress saZaOdgovor(string3, brojPorta);
+        SocketAddress saZaOdgovor(porukaZaObradu.adresaIzDatagramSocketaSaKojeJeDoslaPoruka);
         int n;
         u_char* A;
         
@@ -408,6 +416,7 @@ public:
                      << ", hex: " << hex << porukaZaObradu.javnaAdresa.IPAdresa << dec << ", " << string3 << endl;
                 cout << "Lokalni broj porta:\t" << porukaZaObradu.javnaAdresa.port
                      << ", hex: " << hex << porukaZaObradu.javnaAdresa.port << dec << endl << endl;
+                cout << "Javna adresa i port:\t" << porukaZaObradu.adresaIzDatagramSocketaSaKojeJeDoslaPoruka.toString() << endl << endl;
  
                 porukaZaObradu.identifikatorStrujanja = 
                     byteOrderMoj.fromNetwork(porukaZaObradu.identifikatorStrujanja);
@@ -547,8 +556,8 @@ public:
         timeSpanZaPrijem.assign(vrijemeCekanjaUSecReceiveFrom, vrijemeCekanjaUMiliSecReceiveFrom);
  /*       SocketAddress mojaV6adresa(AddressFamily::IPv6, "::0%wlp16s0", "12000");
         DatagramSocket dsV6(mojaV6adresa);
-        dsV6.setReceiveTimeout(timeSpanZaPrijem);
-*/     PorukaMajstor porukaMajstor;
+        dsV6.setReceiveTimeout(timeSpanZaPrijem); */
+        PorukaMajstor porukaMajstor;
         poruka = porukaMajstor.Ping();
         do
         {
@@ -657,7 +666,7 @@ int main()
     //2. FAZA RADNOG REŽIMA
     timeSpanZaPrijem.assign(0, 0);
     ds.setReceiveTimeout(timeSpanZaPrijem);
-    SocketAddress posiljatelj;
+//    SocketAddress posiljatelj;
     cout << "Server je na prijemu . . ." << endl << endl;
     
     
@@ -667,7 +676,7 @@ int main()
     uint64_t brojacPunjenja = 1;
     PrijemnaPoruka prijemnaPoruka;
     PrijemnaPoruka* pokPrijemnaPoruka;
-    
+    PrijemnaPoruka2 prijemnaPoruka2;
     int i = 0;
     int brojPrimljenihBajtova{0};
     PrikazPorukeUHexuPoBajtovima prikazPorukeUHexuPoBajtovima;
@@ -675,7 +684,7 @@ int main()
         
         try
         {
-            brojPrimljenihBajtova = ds.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), posiljatelj);    
+            brojPrimljenihBajtova = ds.receiveFrom(poljeZaPrijem, sizeof(poljeZaPrijem), prijemnaPoruka2.adresaIzDatagramSocketaSaKojeJeDoslaPoruka);    
         }
         catch(const std::exception& e)
         {
@@ -687,16 +696,28 @@ int main()
             cin >> ooo;
         }
         
-        cout << "\n\tPristigla je poruka od posiljatelja " << posiljatelj.toString() << endl;
+        cout << "\n\tPristigla je poruka od posiljatelja " << prijemnaPoruka2.adresaIzDatagramSocketaSaKojeJeDoslaPoruka.toString() << endl;
         
         prikazPorukeUHexuPoBajtovima.PrikaziPorukuPoBajtovima(poljeZaPrijem, brojPrimljenihBajtova);
         
         pokPrijemnaPoruka = (PrijemnaPoruka*)&poljeZaPrijem[0];
         prijemnaPoruka = *pokPrijemnaPoruka;
         //tu rješavam kojeg tipa je adresa, treba dovršiti
-        int a = posiljatelj.af();
-        SocketAddress::Family obitelj = posiljatelj.family();
+     //   int a = posiljatelj.af();
+     //   SocketAddress::Family obitelj = posiljatelj.family();
         
+        prijemnaPoruka2.tipPoruke = prijemnaPoruka.tipPoruke;
+        prijemnaPoruka2.identifikatorStrujanja = prijemnaPoruka.identifikatorStrujanja;
+        prijemnaPoruka2.javnaAdresa.tipArdese = prijemnaPoruka.javnaAdresa.tipArdese;
+        prijemnaPoruka2.javnaAdresa.IPAdresa = prijemnaPoruka.javnaAdresa.IPAdresa;
+        prijemnaPoruka2.javnaAdresa.port = prijemnaPoruka.javnaAdresa.port;
+        prijemnaPoruka2.lokalnaAdresa.tipArdese = prijemnaPoruka.lokalnaAdresa.tipArdese;
+        prijemnaPoruka2.lokalnaAdresa.IPAdresa = prijemnaPoruka.lokalnaAdresa.IPAdresa;
+        prijemnaPoruka2.lokalnaAdresa.port = prijemnaPoruka.lokalnaAdresa.port;
+
+        cout << prijemnaPoruka2.adresaIzDatagramSocketaSaKojeJeDoslaPoruka.toString() << endl;
+
+
         //u strukturu prijemnaPoruka ubacujem javnu ip adresu
 /*        if (prijemnaPoruka.tipPoruke == MSG_STREAM_ADVERTISEMENT) {
                 
@@ -710,9 +731,9 @@ int main()
         }
   */      
         cout << "Punjac je poslao " << brojacPunjenja++ << ".poruku na obradu, " << hex
-             << prijemnaPoruka.identifikatorStrujanja << dec << endl << endl;
+             << prijemnaPoruka2.identifikatorStrujanja << dec << endl << endl;
 
-        cirkularniBafer.Dodaj(prijemnaPoruka);
+        cirkularniBafer.Dodaj(prijemnaPoruka2);
         
         i++;
     }
