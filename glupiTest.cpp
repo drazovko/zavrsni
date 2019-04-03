@@ -70,6 +70,13 @@ struct PrijemnaPoruka2{
     SocketAddress adresaIzDatagramSocketaSaKojeJeDoslaPoruka;
 };
 
+struct RegistracijskeAdrese {
+    uint8_t tipJavneAdrese;
+    string javnaIPAdresa;
+    uint8_t tipPrivatneAdrese;
+    string privatnaIPAdresa;
+};
+
 class PrikazPorukeUHexuPoBajtovima
 {
 private:
@@ -261,7 +268,7 @@ private:
 KruzniSpremnik<PrijemnaPoruka2, 100> cirkularniBafer; //gobalni spremnik ulaznih poruka
 KruzniSpremnik<VrijemeUpisa, 10000> cirkularniSpremnikVremenaUpisa; //spremnik vremena upisa sa id.brojem
 Poco::ByteOrder byteOrderMoj;
-map<u_int64_t, string> registracija;
+map<u_int64_t, RegistracijskeAdrese> registracija;
 
 class UcitavanjeKonfiguracije
 {
@@ -392,17 +399,15 @@ public:
         char polje[1024];
         string string3;
         std::pair<std::_Rb_tree_iterator<std::pair<const long unsigned int, 
-             std::__cxx11::basic_string<char> > >, bool> rez;
+             RegistracijskeAdrese > >, bool> rez;
         UcitavanjeKonfiguracije citac;
         SocketAddress saMojaAdresa(citac.DajParametar(IPadresa), citac.DajParametar(port));
         DatagramSocket dsPorukaMaster(saMojaAdresa);
         string3 = inet_ntop(AF_INET, &porukaZaObradu.javnaAdresa.IPAdresa , polje, INET_ADDRSTRLEN);
-        uint16_t brojPorta = byteOrderMoj.fromNetwork(porukaZaObradu.javnaAdresa.port);
-//        SocketAddress saZaOdgovor(string3, brojPorta);
         SocketAddress saZaOdgovor(porukaZaObradu.adresaIzDatagramSocketaSaKojeJeDoslaPoruka);
         int n;
         u_char* A;
-        
+        RegistracijskeAdrese registracijskeAdrese;
         switch (porukaZaObradu.tipPoruke)
         {
             case imePoruke::MSG_STREAM_ADVERTISEMENT:
@@ -413,7 +418,8 @@ public:
                      << ", hex: " << hex << porukaZaObradu.identifikatorStrujanja << dec << endl;
                 cout << "Tip lokalne sdrese:\t" << (int)porukaZaObradu.javnaAdresa.tipArdese << endl;
                 cout << "Lokalna IP adresa:\t" << porukaZaObradu.javnaAdresa.IPAdresa 
-                     << ", hex: " << hex << porukaZaObradu.javnaAdresa.IPAdresa << dec << ", " << string3 << endl;
+                     << ", hex: " << hex << porukaZaObradu.javnaAdresa.IPAdresa << dec << ", "
+                     << string3 << endl;
                 cout << "Lokalni broj porta:\t" << porukaZaObradu.javnaAdresa.port
                      << ", hex: " << hex << porukaZaObradu.javnaAdresa.port << dec << endl << endl;
                 cout << "Javna adresa i port:\t" << porukaZaObradu.adresaIzDatagramSocketaSaKojeJeDoslaPoruka.toString() << endl << endl;
@@ -421,11 +427,15 @@ public:
                 porukaZaObradu.identifikatorStrujanja = 
                     byteOrderMoj.fromNetwork(porukaZaObradu.identifikatorStrujanja);
                 
-                rez = registracija.insert({porukaZaObradu.identifikatorStrujanja,
-                     string3});
-
+                registracijskeAdrese.tipJavneAdrese = 1;
+                registracijskeAdrese.javnaIPAdresa = porukaZaObradu.adresaIzDatagramSocketaSaKojeJeDoslaPoruka.toString();
+                registracijskeAdrese.tipPrivatneAdrese = 1;
+                registracijskeAdrese.privatnaIPAdresa = string3;
+                registracijskeAdrese.privatnaIPAdresa.push_back(':');
+                registracijskeAdrese.privatnaIPAdresa.append(to_string(byteOrderMoj.fromNetwork(porukaZaObradu.javnaAdresa.port)));
                 
-                //vrijemeRegistracije.insert({})
+                rez = registracija.insert({porukaZaObradu.identifikatorStrujanja,
+                     registracijskeAdrese});
 
                 if (rez.second) {       //identifikacijski broj uspješno dodan u bazu, zapisano vrijeme upisa, poslan odgovor, testirano
                     cout << "Identifikacijski broj: " << porukaZaObradu.identifikatorStrujanja
@@ -445,7 +455,7 @@ public:
                 }
                 else                    
                 {   //identifikacijski broj već postoji u bazi, ažurirano vrijeme upisa, poslan odgovor
-                    if( registracija[porukaZaObradu.identifikatorStrujanja] == string3){
+                    if( registracija[porukaZaObradu.identifikatorStrujanja].javnaIPAdresa == registracijskeAdrese.javnaIPAdresa){
                         cout << "Identifikacijski broj: " << porukaZaObradu.identifikatorStrujanja
                              << " vec postoji u bazi." << endl;
                         
@@ -476,18 +486,37 @@ public:
                              << "____________________________________________________" << endl;
                       }   
                 }
-                cout << "\n\tRegistrirani streamovi" << endl;   //ispis registriranih streamova
+                cout << "\n\t\tRegistrirani streamovi" << endl
+                     << "Identifikacijski broj\t" << "Javna adresa i port\t" 
+                     << "Lokalna adresa i port" << endl;   //ispis registriranih streamova
                 for(const auto& element : registracija){
-                    cout << element.first << "\t" << element.second << endl;
+                    cout << element.first << "\t" << element.second.javnaIPAdresa << "\t"
+                         << element.second.privatnaIPAdresa << endl;
                 }
                 cout << endl;
-                cout << "\tVremena upisa" << endl;    //ispis vremena upisa za posjedini stream
+                cout << "\t\tVremena upisa" << endl;    //ispis vremena upisa za posjedini stream
                 cirkularniSpremnikVremenaUpisa.IspisCirkularnogSpremnika();
                 cout << "-----------------------------------------------------------" << endl << endl;
                 break;
             case imePoruke::MSG_STREAM_REMOVE:
-                cout << "MSG_STREAM_REMOVE" << endl;
-                
+                cout << "Obrada pristigle porkue MSG_STREAM_REMOVE" << endl;
+                cout << "\n\tPrimljena poruka u mreznom obliku: " << endl;
+                cout << "Tip poruke:\t\t" << (int)porukaZaObradu.tipPoruke << endl;
+                cout << "Identif.strujanja:\t" << porukaZaObradu.identifikatorStrujanja 
+                     << ", hex: " << hex << porukaZaObradu.identifikatorStrujanja << dec << endl;
+                cout << "Javna adresa i port:\t" << porukaZaObradu.adresaIzDatagramSocketaSaKojeJeDoslaPoruka.toString() 
+                     << endl << endl;
+ 
+                porukaZaObradu.identifikatorStrujanja = 
+                    byteOrderMoj.fromNetwork(porukaZaObradu.identifikatorStrujanja);
+                if( registracija[porukaZaObradu.identifikatorStrujanja].javnaIPAdresa == 
+                                                            porukaZaObradu.adresaIzDatagramSocketaSaKojeJeDoslaPoruka.toString()){
+                        cout << "Identifikacijski broj: " << porukaZaObradu.identifikatorStrujanja
+                             << " vec postoji u bazi." << endl;
+                }
+
+
+
                 break;
             case imePoruke::MSG_REQ_RELAY_LIST:
                 cout << "MSG_REQ_RELAY_LIST" << endl;
